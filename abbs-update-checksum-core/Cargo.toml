@@ -1,0 +1,12 @@
+[package]
+name = "abbs-update-checksum-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6"
+abbs-meta-apml = { git = "https://github.com/AOSC-Dev/abbs-meta-rs", package = "abbs-meta-apml", rev = "4a592937b44e8bb93103edd34eff384169a3248a" }
+log = "0.4"
+sha2 = "0.10.8"
+reqwest = { version = "0.12", features = ["blocking"] }
+faster-hex = "0.9"
