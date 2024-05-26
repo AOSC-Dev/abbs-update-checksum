@@ -6,6 +6,7 @@ use reqwest::Client;
 use reqwest::ClientBuilder;
 use sha2::Digest;
 use sha2::Sha256;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
 
@@ -51,9 +52,9 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
             let src = split.last().unwrap_or(&"");
 
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
-                res.push("SKIP".to_string());
+                res.push(Cow::Borrowed("SKIP"));
             } else {
-                res.push("".to_string());
+                res.push(Cow::Borrowed(""));
                 let task = get_sha256(client, src);
                 tasks.push(task);
             }
@@ -64,7 +65,7 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
         for c in tasks_res {
             let c = c?;
             let pos = res.iter().position(|x| x.is_empty()).unwrap();
-            res[pos] = c;
+            res[pos] = Cow::Owned(c);
         }
 
         src_chksum_map.insert(k, res);
