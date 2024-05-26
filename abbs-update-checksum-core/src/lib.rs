@@ -53,6 +53,7 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
                 res.push("SKIP".to_string());
             } else {
+                res.push("".to_string());
                 let task = get_sha256(client, src);
                 tasks.push(task);
             }
@@ -62,7 +63,8 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
 
         for c in tasks_res {
             let c = c?;
-            res.push(c);
+            let pos = res.iter().position(|x| x.is_empty()).unwrap();
+            res[pos] = c;
         }
 
         src_chksum_map.insert(k, res);
