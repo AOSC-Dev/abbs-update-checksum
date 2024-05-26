@@ -50,7 +50,13 @@ fn main() -> Result<()> {
     let spec = spec.ok_or_eyre("Failed to get spec")?;
 
     let mut spec_inner = fs::read_to_string(&spec)?;
-    let (nk, nv) = update_from_str(&spec_inner)?;
+
+    let async_runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
+    let (nk, nv) = async_runtime.block_on(update_from_str(&spec_inner))?;
 
     let mut split = spec_inner
         .trim()
