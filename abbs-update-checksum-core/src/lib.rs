@@ -1,3 +1,4 @@
+use eyre::bail;
 use eyre::Result;
 use faster_hex::hex_string;
 use log::warn;
@@ -11,12 +12,17 @@ use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 
-pub fn parse_from_str(s: &str) -> Result<HashMap<String, String>> {
+pub fn parse_from_str(s: &str, allow_fallback_method: bool) -> Result<HashMap<String, String>> {
     let mut context = HashMap::new();
 
-    match abbs_meta_apml::parse(s, &mut context) {
-        Ok(()) => (),
-        Err(e) => {
+    if let Err(e) = abbs_meta_apml::parse(s, &mut context) {
+        if !allow_fallback_method {
+            bail!(e
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("; "));
+        } else {
             warn!("{e:?}, buildit will use fallback method to parse file");
             for line in s.split('\n') {
                 let stmt = line.split_once('=');
@@ -25,7 +31,7 @@ pub fn parse_from_str(s: &str) -> Result<HashMap<String, String>> {
                 }
             }
         }
-    };
+    }
 
     Ok(context)
 }
@@ -105,7 +111,7 @@ async fn get_sha256(client: &Client, src: &str) -> Result<String, eyre::Error> {
 }
 
 pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
-    let mut context = parse_from_str(s)?;
+    let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent("acbs").build()?;
 
     let mut old = vec![];

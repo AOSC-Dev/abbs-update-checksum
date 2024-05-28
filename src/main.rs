@@ -37,7 +37,7 @@ fn main() -> Result<()> {
 
         if path.exists() {
             let f = fs::read_to_string(path)?;
-            let defines = parse_from_str(&f)?;
+            let defines = parse_from_str(&f, true)?;
             if defines
                 .get("PKGNAME")
                 .map(|x| x == &pkg.replace('"', ""))
