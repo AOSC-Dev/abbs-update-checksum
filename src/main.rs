@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use abbs_update_checksum_core::{parse_from_str, update_from_str};
+use abbs_update_checksum_core::{get_new_spec, parse_from_str};
 use clap::Parser;
 use eyre::{bail, OptionExt, Result};
 use walkdir::WalkDir;
@@ -56,52 +56,7 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
 
-    let (nk, nv) = async_runtime.block_on(update_from_str(&spec_inner))?;
-
-    let mut split = spec_inner
-        .trim()
-        .split('\n')
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>();
-
-    let mut new_line_value = false;
-    let mut start_line = 0;
-    let mut end_line = 0;
-    for (i, c) in split.iter_mut().enumerate() {
-        let a = c.split_once('=');
-
-        if new_line_value {
-            if c.contains('"') && c.chars().filter(|x| x == &'"').count() % 2 != 0 {
-                new_line_value = false;
-                end_line = i;
-            }
-        }
-
-        if let Some((k, v)) = a {
-            if k != nk && !new_line_value {
-                continue;
-            }
-
-            if v.chars().filter(|x| x == &'"').count() % 2 != 0 {
-                new_line_value = true;
-                start_line = i;
-            } else {
-                *c = nv.clone();
-            }
-        }
-    }
-
-    if start_line != 0 {
-        let mut new_split = vec![];
-        new_split.extend_from_slice(&split[..start_line]);
-
-        if let Some(v) = split.get(end_line + 1..) {
-            new_split.extend_from_slice(v);
-        }
-
-        spec_inner = new_split.join("\n");
-        spec_inner.push_str(&format!("\n{nv}"));
-    }
+    async_runtime.block_on(get_new_spec(&mut spec_inner))?;
 
     if args.dry_run {
         println!("{}", spec_inner);

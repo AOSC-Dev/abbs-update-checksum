@@ -1,4 +1,3 @@
-use eyre::bail;
 use eyre::Result;
 use faster_hex::hex_string;
 use log::warn;
@@ -107,18 +106,80 @@ async fn get_sha256(client: &Client, src: &str) -> Result<String, eyre::Error> {
     Ok(s)
 }
 
-pub async fn update_from_str(s: &str) -> Result<(String, String)> {
+pub async fn update_from_str(s: &str) -> Result<Vec<(String, String)>> {
     let mut context = parse_from_str(&s)?;
     let client = ClientBuilder::new().user_agent("acbs").build()?;
     update_all_checksum(&client, &mut context).await?;
+    let mut res = vec![];
 
     for (k, v) in context {
         if k.starts_with("CHKSUM") {
-            return Ok((k.to_string(), format!("{k}=\"{v}\"")));
+            res.push((k.to_string(), format!("{k}=\"{v}\"")));
         }
     }
 
-    bail!("has no checksum to update");
+    Ok(res)
+}
+
+pub async fn get_new_spec(spec_inner: &mut String) -> Result<()> {
+    let checksums = update_from_str(&*spec_inner).await?;
+
+    let mut split = spec_inner
+        .trim()
+        .split('\n')
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>();
+
+    let mut new_line_value = false;
+    let mut start_line = 0;
+    let mut end_line = 0;
+
+    for (i, c) in split.iter_mut().enumerate() {
+        let a = c.split_once('=');
+
+        if new_line_value {
+            if c.contains('"') && c.chars().filter(|x| x == &'"').count() % 2 != 0 {
+                new_line_value = false;
+                end_line = i;
+            }
+        }
+
+        if let Some((k, v)) = a {
+            if checksums.iter().all(|x| x.0 != k) && !new_line_value {
+                continue;
+            }
+            // checksum 多行的情况
+            if v.chars().filter(|x| x == &'"').count() % 2 != 0 {
+                new_line_value = true;
+                start_line = i;
+            } else {
+                // checksum 只有一行
+                let find = checksums.iter().find(|x| x.0 == k);
+                if let Some((_, v)) = find {
+                    *c = v.clone();
+                }
+            }
+        }
+    }
+
+    if start_line != 0 || end_line != 0 {
+        let mut new_split = vec![];
+
+        if let Some(v) = split.get(..start_line) {
+            new_split.extend_from_slice(v);
+        }
+
+        if let Some(v) = split.get(end_line + 1..) {
+            new_split.extend_from_slice(v);
+        }
+
+        *spec_inner = new_split.join("\n");
+        for (_, i) in checksums {
+            spec_inner.push_str(&format!("\n{i}"));
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::test]
