@@ -34,7 +34,7 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
     let mut src_chksum_map = HashMap::new();
 
     for (k, v) in context.clone() {
-        if !k.starts_with("SRCS") && !k.starts_with("SRCTBL") {
+        if k != "SRCS" && !k.starts_with("SRCS__") {
             continue;
         }
 
@@ -87,8 +87,6 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
         }
     }
 
-    context.remove("CHKSUM");
-
     Ok(())
 }
 
@@ -112,7 +110,7 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
 
     let mut old = vec![];
     for (k, v) in &context {
-        if k.starts_with("CHKSUM") {
+        if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
             let v = v.split_whitespace().collect::<Vec<_>>().join(" \\\n");
             old.push(v);
         }
@@ -122,7 +120,7 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
     let mut new = vec![];
 
     for (k, v) in context {
-        if k.starts_with("CHKSUM") {
+        if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
             new.push(v);
         }
     }
