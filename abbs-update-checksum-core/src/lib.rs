@@ -1,4 +1,4 @@
-use eyre::bail;
+use abbs_meta_apml::ParseError;
 use eyre::Result;
 use faster_hex::hex_string;
 use log::warn;
@@ -8,20 +8,36 @@ use sha2::Digest;
 use sha2::Sha256;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::Display;
 use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 
-fn parse_from_str(s: &str, allow_fallback_method: bool) -> Result<HashMap<String, String>> {
+#[derive(Debug)]
+pub struct ParseErrors(Vec<ParseError>);
+
+impl Display for ParseErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, c) in self.0.iter().enumerate() {
+            writeln!(f, "{i}. {c}")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Error for ParseErrors {}
+
+fn parse_from_str(
+    s: &str,
+    allow_fallback_method: bool,
+) -> Result<HashMap<String, String>, ParseErrors> {
     let mut context = HashMap::new();
 
     if let Err(e) = abbs_meta_apml::parse(s, &mut context) {
         if !allow_fallback_method {
-            bail!(e
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("; "));
+            return Err(ParseErrors(e));
         } else {
             warn!("{e:?}, buildit will use fallback method to parse file");
             for line in s.split('\n') {
@@ -96,7 +112,7 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
     Ok(())
 }
 
-async fn get_sha256(client: &Client, src: &str) -> Result<String, eyre::Error> {
+async fn get_sha256(client: &Client, src: &str) -> Result<String> {
     let mut sha256 = Sha256::new();
     let resp = client.get(src).send().await?;
     let mut resp = resp.error_for_status()?;
