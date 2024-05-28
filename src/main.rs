@@ -19,6 +19,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
     let args = Args::parse();
 
     let pkg = args.package;
@@ -39,7 +40,7 @@ fn main() -> Result<()> {
             let defines = parse_from_str(&f)?;
             if defines
                 .get("PKGNAME")
-                .map(|x| x == &pkg.replace("\"", ""))
+                .map(|x| x == &pkg.replace('"', ""))
                 .unwrap_or(false)
             {
                 spec = Some(()).and_then(|_| Some(i.path().parent()?.join("spec")));
