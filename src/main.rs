@@ -27,25 +27,19 @@ fn main() -> Result<()> {
 
     let mut spec = None;
 
-    for i in WalkDir::new(tree).max_depth(3).min_depth(3) {
+    for i in WalkDir::new(tree).max_depth(2).min_depth(2) {
         let i = i?;
         if !i.file_type().is_dir() {
             continue;
         }
 
-        let path = i.path().join("defines");
+        let path = i.path();
 
-        if path.exists() {
-            let f = fs::read_to_string(path)?;
-            let defines = parse_from_str(&f, true)?;
-            if defines
-                .get("PKGNAME")
-                .map(|x| x == &pkg.replace('"', ""))
-                .unwrap_or(false)
-            {
-                spec = Some(()).and_then(|_| Some(i.path().parent()?.join("spec")));
-            }
+        if !path.file_name().map(|x| x == &*pkg).unwrap_or(false) {
+            continue;
         }
+
+        spec = Some(path.join("spec"));
     }
 
     let spec = spec.ok_or_eyre("Failed to get spec")?;
