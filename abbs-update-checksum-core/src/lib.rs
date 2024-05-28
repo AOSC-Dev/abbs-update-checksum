@@ -12,7 +12,7 @@ use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 
-pub fn parse_from_str(s: &str, allow_fallback_method: bool) -> Result<HashMap<String, String>> {
+fn parse_from_str(s: &str, allow_fallback_method: bool) -> Result<HashMap<String, String>> {
     let mut context = HashMap::new();
 
     if let Err(e) = abbs_meta_apml::parse(s, &mut context) {

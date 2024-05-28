@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use abbs_update_checksum_core::{get_new_spec, parse_from_str};
+use abbs_update_checksum_core::get_new_spec;
 use clap::Parser;
 use eyre::{bail, OptionExt, Result};
 use walkdir::WalkDir;
