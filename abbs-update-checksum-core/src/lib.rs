@@ -1,6 +1,7 @@
 use abbs_meta_apml::ParseError;
 use eyre::Result;
 use faster_hex::hex_string;
+use log::debug;
 use log::warn;
 use reqwest::Client;
 use reqwest::ClientBuilder;
@@ -97,15 +98,9 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
 
         if let Some((_, arch)) = type_arch {
             let key = format!("CHKSUMS__{}", arch);
-            context.insert(
-                key.to_string(),
-                v.join(&format!(" \\\n{}", " ".repeat(key.len() + 2))),
-            );
+            context.insert(key.to_string(), v.join(&format!(" ")));
         } else {
-            context.insert(
-                "CHKSUMS".to_string(),
-                v.join(&format!(" \\\n{}", " ".repeat(9))),
-            );
+            context.insert("CHKSUMS".to_string(), v.join(" "));
         }
     }
 
@@ -126,14 +121,18 @@ async fn get_sha256(client: &Client, src: &str) -> Result<String> {
     Ok(s)
 }
 
-pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
+pub async fn update_from_str(s: &str) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)> {
     let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent("acbs").build()?;
 
     let mut old = vec![];
     for (k, v) in &context {
         if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
-            let v = v.split_whitespace().collect::<Vec<_>>().join(" \\\n");
+            let v = v
+                .split_whitespace()
+                .map(|x| x.trim().to_string())
+                .collect::<Vec<_>>();
+
             old.push(v);
         }
     }
@@ -143,6 +142,11 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
 
     for (k, v) in context {
         if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
+            let v = v
+                .split_whitespace()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>();
+
             new.push(v);
         }
     }
@@ -153,8 +157,13 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<String>, Vec<String>)> {
 pub async fn get_new_spec(spec_inner: &mut String) -> Result<()> {
     let (old, new) = update_from_str(&*spec_inner).await?;
 
+    debug!("{old:?}");
+    debug!("{new:?}");
+
     for (i, c) in old.iter().enumerate() {
-        *spec_inner = spec_inner.replace(c, &new[i]);
+        for (j, d) in c.iter().enumerate() {
+            *spec_inner = spec_inner.replace(d, &new[i][j]);
+        }
     }
 
     Ok(())
@@ -162,7 +171,7 @@ pub async fn get_new_spec(spec_inner: &mut String) -> Result<()> {
 
 #[tokio::test]
 async fn test_update_all_checksum() {
-    let mut context = HashMap::new();
+    let mut context: HashMap<String, String> = HashMap::new();
 
     abbs_meta_apml::parse(
         r#"VER=5.115.0
