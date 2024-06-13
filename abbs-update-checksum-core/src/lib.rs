@@ -98,7 +98,7 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
 
         if let Some((_, arch)) = type_arch {
             let key = format!("CHKSUMS__{}", arch);
-            context.insert(key.to_string(), v.join(&format!(" ")));
+            context.insert(key.to_string(), v.join(" "));
         } else {
             context.insert("CHKSUMS".to_string(), v.join(" "));
         }

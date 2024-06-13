@@ -18,7 +18,6 @@ dependencies = [
 name = "abbs-update-checksum"
 version = "0.1.0"
 dependencies = [
- "abbs-meta-apml",
  "abbs-update-checksum-core",
  "clap",
  "env_logger",

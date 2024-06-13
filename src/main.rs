@@ -46,12 +46,10 @@ fn main() -> Result<()> {
 
     let mut spec_inner = fs::read_to_string(&spec)?;
 
-    let async_runtime = tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_multi_thread()
         .enable_io()
-        .build()
-        .unwrap();
-
-    async_runtime.block_on(get_new_spec(&mut spec_inner))?;
+        .build()?
+        .block_on(get_new_spec(&mut spec_inner))?;
 
     if args.dry_run {
         println!("{}", spec_inner);

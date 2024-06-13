@@ -8,7 +8,6 @@ clap = { version = "4", features = ["derive"] }
 abbs-update-checksum-core = { path = "./abbs-update-checksum-core" }
 eyre = "0.6"
 walkdir = "2.5.0"
-abbs-meta-apml = { git = "https://github.com/AOSC-Dev/abbs-meta-rs", package = "abbs-meta-apml", rev = "4a592937b44e8bb93103edd34eff384169a3248a" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 env_logger = "0.11.3"
 
