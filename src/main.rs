@@ -48,6 +48,7 @@ fn main() -> Result<()> {
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_io()
+        .enable_time()
         .build()?
         .block_on(get_new_spec(&mut spec_inner))?;
 
