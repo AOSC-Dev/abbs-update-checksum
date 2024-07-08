@@ -3,6 +3,8 @@ use eyre::Result;
 use faster_hex::hex_string;
 use log::debug;
 use log::warn;
+use reqwest::header::HeaderValue;
+use reqwest::header::CONTENT_LENGTH;
 use reqwest::Client;
 use reqwest::ClientBuilder;
 use sha2::Digest;
@@ -53,9 +55,17 @@ fn parse_from_str(
     Ok(context)
 }
 
-async fn update_all_checksum(client: &Client, context: &mut HashMap<String, String>) -> Result<()> {
+async fn update_all_checksum<C>(
+    client: &Client,
+    context: &mut HashMap<String, String>,
+    cb: C,
+) -> Result<()>
+where
+    C: Fn(bool, usize, usize, u64) + Clone,
+{
     let mut src_chksum_map = HashMap::new();
 
+    let mut task_index = 0;
     for (k, v) in context.clone() {
         if k != "SRCS" && !k.starts_with("SRCS__") {
             continue;
@@ -77,7 +87,8 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
                 res.push(Cow::Borrowed("SKIP"));
             } else {
                 res.push(Cow::Borrowed(""));
-                let task = get_sha256(client, src);
+                let task = get_sha256(client, src, task_index, cb.clone());
+                task_index += 1;
                 tasks.push(task);
             }
         }
@@ -107,21 +118,44 @@ async fn update_all_checksum(client: &Client, context: &mut HashMap<String, Stri
     Ok(())
 }
 
-async fn get_sha256(client: &Client, src: &str) -> Result<String> {
+async fn get_sha256(
+    client: &Client,
+    src: &str,
+    task_index: usize,
+    cb: impl (Fn(bool, usize, usize, u64)),
+) -> Result<String> {
     let mut sha256 = Sha256::new();
     let resp = client.get(src).send().await?;
     let mut resp = resp.error_for_status()?;
 
+    let total_size = resp
+        .headers()
+        .get(CONTENT_LENGTH)
+        .map(|x| x.to_owned())
+        .unwrap_or(HeaderValue::from(0));
+
+    let total_size = total_size
+        .to_str()
+        .ok()
+        .and_then(|x| x.parse::<u64>().ok())
+        .unwrap_or_default();
+
     while let Some(chunk) = resp.chunk().await? {
         sha256.update(&chunk);
+        cb(false, task_index, chunk.len(), total_size);
     }
 
     let s = spawn_blocking(move || format!("sha256::{}", hex_string(&sha256.finalize()))).await?;
 
+    cb(true, task_index, total_size as usize, total_size);
+
     Ok(s)
 }
 
-pub async fn update_from_str(s: &str) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)> {
+pub async fn update_from_str<C>(s: &str, cb: C) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
+where
+    C: Fn(bool, usize, usize, u64) + Clone,
+{
     let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent("acbs").build()?;
 
@@ -137,7 +171,7 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<Vec<String>>, Vec<Vec<Strin
         }
     }
 
-    update_all_checksum(&client, &mut context).await?;
+    update_all_checksum(&client, &mut context, cb).await?;
     let mut new = vec![];
 
     for (k, v) in context {
@@ -154,8 +188,11 @@ pub async fn update_from_str(s: &str) -> Result<(Vec<Vec<String>>, Vec<Vec<Strin
     Ok((old, new))
 }
 
-pub async fn get_new_spec(spec_inner: &mut String) -> Result<()> {
-    let (old, new) = update_from_str(&*spec_inner).await?;
+pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C) -> Result<()>
+where
+    C: Fn(bool, usize, usize, u64) + Clone,
+{
+    let (old, new) = update_from_str(&*spec_inner, cb).await?;
 
     debug!("{old:?}");
     debug!("{new:?}");
@@ -185,7 +222,11 @@ CHKUPDATE="anitya::id=8762""#,
 
     let client = ClientBuilder::new().user_agent("acbs").build().unwrap();
 
-    update_all_checksum(&client, &mut context).await.unwrap();
+    update_all_checksum(&client, &mut context, |status, index, downloaded, total| {
+        dbg!(status, index, downloaded, total);
+    })
+    .await
+    .unwrap();
 
     assert_eq!(
         context.get("CHKSUMS").unwrap(),

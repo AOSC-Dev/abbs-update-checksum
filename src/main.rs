@@ -6,7 +6,9 @@ use std::{
 
 use abbs_update_checksum_core::get_new_spec;
 use clap::Parser;
+use dashmap::DashMap;
 use eyre::{bail, OptionExt, Result};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
@@ -46,11 +48,32 @@ fn main() -> Result<()> {
 
     let mut spec_inner = fs::read_to_string(&spec)?;
 
+    let mb = MultiProgress::new();
+    let map: DashMap<usize, ProgressBar> = DashMap::new();
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()?
-        .block_on(get_new_spec(&mut spec_inner))?;
+        .block_on(get_new_spec(
+            &mut spec_inner,
+            |status, index, inc, total| match map.get(&index) {
+                Some(pb) => {
+                    if !status {
+                        pb.inc(inc as u64);
+                    } else {
+                        pb.finish_and_clear();
+                    }
+                }
+                None => {
+                    let pb = mb.add(ProgressBar::new(total));
+                    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                        .unwrap()
+                        .progress_chars("#>-"));
+                    map.insert(index, pb);
+                }
+            },
+        ))?;
 
     if args.dry_run {
         println!("{}", spec_inner);
