@@ -1,6 +1,7 @@
 use abbs_meta_apml::ParseError;
 use eyre::Result;
 use faster_hex::hex_string;
+use futures::StreamExt;
 use log::debug;
 use log::warn;
 use reqwest::header::HeaderValue;
@@ -59,6 +60,7 @@ async fn update_all_checksum<C>(
     client: &Client,
     context: &mut HashMap<String, String>,
     cb: C,
+    thread: usize,
 ) -> Result<()>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
@@ -77,8 +79,8 @@ where
 
         let mut tasks = vec![];
 
-        for i in split {
-            let split = i.trim().split("::").collect::<Vec<_>>();
+        for (i, c) in split.iter().enumerate() {
+            let split = c.trim().split("::").collect::<Vec<_>>();
 
             let typ = split.first().unwrap_or(&"tbl");
             let src = split.last().unwrap_or(&"");
@@ -87,18 +89,20 @@ where
                 res.push(Cow::Borrowed("SKIP"));
             } else {
                 res.push(Cow::Borrowed(""));
-                let task = get_sha256(client, src, task_index, cb.clone());
+                let task = get_sha256(client, src, task_index, cb.clone(), i);
                 task_index += 1;
                 tasks.push(task);
             }
         }
 
-        let tasks_res = futures::future::join_all(tasks).await;
+        let tasks_res = futures::stream::iter(tasks)
+            .buffer_unordered(thread)
+            .collect::<Vec<_>>()
+            .await;
 
         for c in tasks_res {
-            let c = c?;
-            let pos = res.iter().position(|x| x.is_empty()).unwrap();
-            res[pos] = Cow::Owned(c);
+            let (checksum, index) = c?;
+            res[index] = Cow::Owned(checksum);
         }
 
         src_chksum_map.insert(k, res);
@@ -123,7 +127,8 @@ async fn get_sha256(
     src: &str,
     task_index: usize,
     cb: impl (Fn(bool, usize, usize, u64)),
-) -> Result<String> {
+    index: usize,
+) -> Result<(String, usize)> {
     let mut sha256 = Sha256::new();
     let resp = client.get(src).send().await?;
     let mut resp = resp.error_for_status()?;
@@ -149,10 +154,14 @@ async fn get_sha256(
 
     cb(true, task_index, total_size as usize, total_size);
 
-    Ok(s)
+    Ok((s, index))
 }
 
-pub async fn update_from_str<C>(s: &str, cb: C) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
+pub async fn update_from_str<C>(
+    s: &str,
+    cb: C,
+    thread: usize,
+) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
 {
@@ -171,7 +180,7 @@ where
         }
     }
 
-    update_all_checksum(&client, &mut context, cb).await?;
+    update_all_checksum(&client, &mut context, cb, thread).await?;
     let mut new = vec![];
 
     for (k, v) in context {
@@ -188,11 +197,11 @@ where
     Ok((old, new))
 }
 
-pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C) -> Result<()>
+pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, thread: usize) -> Result<()>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
 {
-    let (old, new) = update_from_str(&*spec_inner, cb).await?;
+    let (old, new) = update_from_str(&*spec_inner, cb, thread).await?;
 
     debug!("{old:?}");
     debug!("{new:?}");
@@ -222,9 +231,14 @@ CHKUPDATE="anitya::id=8762""#,
 
     let client = ClientBuilder::new().user_agent("acbs").build().unwrap();
 
-    update_all_checksum(&client, &mut context, |status, index, downloaded, total| {
-        dbg!(status, index, downloaded, total);
-    })
+    update_all_checksum(
+        &client,
+        &mut context,
+        |status, index, downloaded, total| {
+            dbg!(status, index, downloaded, total);
+        },
+        4,
+    )
     .await
     .unwrap();
 
