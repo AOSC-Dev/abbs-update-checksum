@@ -60,7 +60,7 @@ async fn update_all_checksum<C>(
     client: &Client,
     context: &mut HashMap<String, String>,
     cb: C,
-    thread: usize,
+    threads: usize,
 ) -> Result<()>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
@@ -96,7 +96,7 @@ where
         }
 
         let tasks_res = futures::stream::iter(tasks)
-            .buffer_unordered(thread)
+            .buffer_unordered(threads)
             .collect::<Vec<_>>()
             .await;
 
@@ -160,7 +160,7 @@ async fn get_sha256(
 pub async fn update_from_str<C>(
     s: &str,
     cb: C,
-    thread: usize,
+    threads: usize,
 ) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
@@ -180,7 +180,7 @@ where
         }
     }
 
-    update_all_checksum(&client, &mut context, cb, thread).await?;
+    update_all_checksum(&client, &mut context, cb, threads).await?;
     let mut new = vec![];
 
     for (k, v) in context {
@@ -197,11 +197,11 @@ where
     Ok((old, new))
 }
 
-pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, thread: usize) -> Result<()>
+pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> Result<()>
 where
     C: Fn(bool, usize, usize, u64) + Clone,
 {
-    let (old, new) = update_from_str(&*spec_inner, cb, thread).await?;
+    let (old, new) = update_from_str(&*spec_inner, cb, threads).await?;
 
     debug!("{old:?}");
     debug!("{new:?}");

@@ -18,7 +18,7 @@ struct Args {
     #[clap(short, long, default_value_t = String::from("."))]
     tree: String,
     #[clap(short, long, default_value_t = 4)]
-    thread: usize,
+    threads: usize,
     package: String,
 }
 
@@ -76,7 +76,7 @@ fn main() -> Result<()> {
                     map.insert(index, pb);
                 }
             },
-            args.thread,
+            args.threads,
         ))?;
 
     if args.dry_run {
