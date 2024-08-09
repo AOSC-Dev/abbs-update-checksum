@@ -1,5 +1,4 @@
 use abbs_meta_apml::ParseError;
-use eyre::bail;
 use eyre::Result;
 use faster_hex::hex_string;
 use futures::StreamExt;
@@ -195,10 +194,6 @@ where
         }
     }
 
-    if old.len() != new.len() && !old.is_empty() {
-        bail!("Old `SRCS` field and new `SRCS` field length mismatch.");
-    }
-
     Ok((old, new))
 }
 
@@ -211,15 +206,10 @@ where
     debug!("{old:?}");
     debug!("{new:?}");
 
-    if !old.is_empty() {
-        for (i, c) in old.iter().enumerate() {
-            for (j, d) in c.iter().enumerate() {
-                *spec_inner = spec_inner.replace(d, &new[i][j]);
-            }
+    for (i, c) in old.iter().enumerate() {
+        for (j, d) in c.iter().enumerate() {
+            *spec_inner = spec_inner.replace(d, &new[i][j]);
         }
-    } else {
-        // TODO: write new checksum
-        bail!("Old spec has no `CHKSUMS` field.");
     }
 
     Ok(())
