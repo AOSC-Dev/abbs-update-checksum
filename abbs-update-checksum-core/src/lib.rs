@@ -1,4 +1,5 @@
 use abbs_meta_apml::ParseError;
+use eyre::bail;
 use eyre::Result;
 use faster_hex::hex_string;
 use futures::StreamExt;
@@ -171,6 +172,21 @@ where
     let mut old = vec![];
     for (k, v) in &context {
         if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
+            if let Some((_, arch)) = k.split_once("__") {
+                let key = format!("SRCS__{arch}");
+                if let Some(srcs) = context.get(&key) {
+                    if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
+                        bail!("{key} and {k} length mismarch.");
+                    }
+                }
+            } else {
+                if let Some(srcs) = context.get("SRCS") {
+                    if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
+                        bail!("SRCS and {k} length mismarch.");
+                    }
+                }
+            }
+
             let v = v
                 .split_whitespace()
                 .map(|x| x.trim().to_string())
