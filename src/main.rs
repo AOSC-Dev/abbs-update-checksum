@@ -44,6 +44,7 @@ fn main() -> Result<()> {
         }
 
         spec = Some(path.join("spec"));
+        break;
     }
 
     let spec = spec.ok_or_eyre("Failed to get spec")?;
