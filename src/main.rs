@@ -17,7 +17,7 @@ struct Args {
     dry_run: bool,
     #[clap(short, long, default_value_t = String::from("."))]
     tree: String,
-    #[clap(short, long, default_value_t = 4)]
+    #[clap(long, default_value_t = 4)]
     threads: usize,
     package: String,
 }
