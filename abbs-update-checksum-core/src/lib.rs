@@ -224,7 +224,7 @@ where
 
     for (i, c) in old.iter().enumerate() {
         for (j, d) in c.iter().enumerate() {
-            *spec_inner = spec_inner.replace(d, &new[i][j]);
+            *spec_inner = spec_inner.replacen(d, &new[i][j], 1);
         }
     }
 
