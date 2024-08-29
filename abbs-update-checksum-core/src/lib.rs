@@ -222,9 +222,16 @@ where
     debug!("{old:?}");
     debug!("{new:?}");
 
+    let tmp_ref = spec_inner.clone();
+    let mut tmp_ref = tmp_ref.as_str();
+    let mut offset = 0;
+
     for (i, c) in old.iter().enumerate() {
         for (j, d) in c.iter().enumerate() {
-            *spec_inner = spec_inner.replacen(d, &new[i][j], 1);
+            let start = tmp_ref.find(d).unwrap();
+            tmp_ref = &tmp_ref[start + d.len()..];
+            spec_inner.replace_range(offset + start..offset + start + d.len(), &new[i][j]);
+            offset += start + d.len();
         }
     }
 
