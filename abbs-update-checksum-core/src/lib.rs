@@ -177,13 +177,13 @@ where
                 let key = format!("SRCS__{arch}");
                 if let Some(srcs) = context.get(&key) {
                     if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
-                        bail!("{key} and {k} length mismarch.");
+                        bail!("{key} and {k} element counts do not match.");
                     }
                 }
             } else {
                 if let Some(srcs) = context.get("SRCS") {
                     if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
-                        bail!("SRCS and {k} length mismarch.");
+                        bail!("SRCS and {k} element counts do not match.");
                     }
                 }
             }
