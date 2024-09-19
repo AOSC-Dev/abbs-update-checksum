@@ -18,6 +18,7 @@ use std::fmt::Display;
 use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
+const UA: &str = "curl/8.10.0";
 
 #[derive(Debug)]
 pub struct ParseErrors(Vec<ParseError>);
@@ -167,7 +168,7 @@ where
     C: Fn(bool, usize, usize, u64) + Clone,
 {
     let mut context = parse_from_str(s, false)?;
-    let client = ClientBuilder::new().user_agent("acbs").build()?;
+    let client = ClientBuilder::new().user_agent(UA).referer(false).build()?;
 
     let mut old = vec![];
     for (k, v) in &context {
