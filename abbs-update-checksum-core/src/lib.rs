@@ -65,7 +65,7 @@ async fn update_all_checksum<C>(
     threads: usize,
 ) -> Result<()>
 where
-    C: Fn(bool, usize, usize, u64) + Clone,
+    C: Fn(bool, usize, usize, u64) + Copy,
 {
     let mut src_chksum_map = HashMap::new();
 
@@ -91,7 +91,7 @@ where
                 res.push(Cow::Borrowed("SKIP"));
             } else {
                 res.push(Cow::Borrowed(""));
-                let task = get_sha256(client, src, task_index, cb.clone(), i);
+                let task = get_sha256(client, src, task_index, cb, i);
                 task_index += 1;
                 tasks.push(task);
             }
@@ -165,7 +165,7 @@ pub async fn update_from_str<C>(
     threads: usize,
 ) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
 where
-    C: Fn(bool, usize, usize, u64) + Clone,
+    C: Fn(bool, usize, usize, u64) + Copy,
 {
     let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent(UA).referer(false).build()?;
@@ -216,7 +216,7 @@ where
 
 pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> Result<()>
 where
-    C: Fn(bool, usize, usize, u64) + Clone,
+    C: Fn(bool, usize, usize, u64) + Copy,
 {
     let (old, new) = update_from_str(&*spec_inner, cb, threads).await?;
 
