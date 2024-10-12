@@ -1,5 +1,4 @@
 use abbs_meta_apml::ParseError;
-use eyre::bail;
 use eyre::Result;
 use faster_hex::hex_string;
 use futures::StreamExt;
@@ -191,10 +190,16 @@ pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> 
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
-    let new = update_from_str(&*spec_inner, cb, threads).await?;
+    let new_checksum_map = update_from_str(&*spec_inner, cb, threads).await?;
 
-    debug!("{new:?}");
+    debug!("{new_checksum_map:?}");
 
+    update_spec_inner(new_checksum_map, spec_inner);
+
+    Ok(())
+}
+
+fn update_spec_inner(new: HashMap<String, Vec<String>>, spec_inner: &mut String) {
     for (k, v) in new {
         let start = spec_inner.find(&k).unwrap();
         let mut tmp_ref = spec_inner.as_str();
@@ -203,46 +208,95 @@ where
         tmp_ref = &tmp_ref[start_delimit + 1..];
         let end_delimit = tmp_ref.find("\"").unwrap();
 
-        debug!("replace range: {}", &spec_inner[start..start + start_delimit + end_delimit + 2]);
+        debug!(
+            "replace range: {}",
+            &spec_inner[start..start + start_delimit + end_delimit + 2]
+        );
 
         spec_inner.replace_range(
             start..start + start_delimit + end_delimit + 2,
             &format!("{k}=\"{}\"", &v.join(" \\\n         ")),
         );
     }
-
-    Ok(())
 }
 
-#[tokio::test]
-async fn test_update_all_checksum() {
-    let mut context: HashMap<String, String> = HashMap::new();
+#[test]
+fn test_update_spec() {
+    let map1 = [("CHKSUMS".to_string(), vec!["sha256::xyz".to_string()])]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
-    abbs_meta_apml::parse(
-        r#"VER=5.115.0
+    let mut spec = r#"VER=5.115.0
 SRCS="tbl::https://download.kde.org/stable/frameworks/${VER%.*}/kiconthemes-$VER.tar.xz"
 CHKSUMS="sha256::abc \
          SKIP"
-CHKUPDATE="anitya::id=8762""#,
-        &mut context,
-    )
-    .unwrap();
+CHKUPDATE="anitya::id=8762""#
+        .to_string();
 
-    let client = ClientBuilder::new().user_agent("acbs").build().unwrap();
-
-    update_all_checksum(
-        &client,
-        &mut context,
-        |status, index, downloaded, total| {
-            dbg!(status, index, downloaded, total);
-        },
-        4,
-    )
-    .await
-    .unwrap();
+    update_spec_inner(map1, &mut spec);
 
     assert_eq!(
-        context.get("CHKSUMS").unwrap(),
-        "sha256::6925134bf76bb8bf6b3dabada008ded8f60fa196aa7a00c0c720c29008719d2f"
+        spec,
+        r#"VER=5.115.0
+SRCS="tbl::https://download.kde.org/stable/frameworks/${VER%.*}/kiconthemes-$VER.tar.xz"
+CHKSUMS="sha256::xyz"
+CHKUPDATE="anitya::id=8762""#
+            .to_string()
+    );
+
+    let map1 = [("CHKSUMS".to_string(), vec!["sha256::xyz".to_string()])]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
+    let mut spec = r#"VER=5.115.0
+SRCS="tbl::https://download.kde.org/stable/frameworks/${VER%.*}/kiconthemes-$VER.tar.xz"
+CHKSUMS="sha256::abc"
+CHKUPDATE="anitya::id=8762""#
+        .to_string();
+
+    update_spec_inner(map1, &mut spec);
+
+    assert_eq!(
+        spec,
+        r#"VER=5.115.0
+SRCS="tbl::https://download.kde.org/stable/frameworks/${VER%.*}/kiconthemes-$VER.tar.xz"
+CHKSUMS="sha256::xyz"
+CHKUPDATE="anitya::id=8762""#
+            .to_string()
+    );
+
+    let map2 = [(
+        "CHKSUMS".to_string(),
+        vec![
+            "SKIP".to_string(),
+            "sha256::95ecac13c3f8c69e3e80fa73864102f13730b5fd87e7438c23b96766ef458e41".to_string(),
+            "sha256::b04eec580794279f6178644f6d7af090bd9bcbd3fb3b6873f3c714e21fa514fb".to_string(),
+        ],
+    )]
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+
+    let mut spec = r#"VER=3.113
+SRCS="git::commit=tags/v$VER::https://github.com/lxgw/kose-font \
+      file::rename=XiaolaiMonoSC-Regular.ttf::https://github.com/lxgw/kose-font/releases/download/v$VER/XiaolaiMonoSC-Regular.ttf \
+      file::rename=XiaolaiSC-Regular.ttf::https://github.com/lxgw/kose-font/releases/download/v$VER/XiaolaiSC-Regular.ttf"
+CHKSUMS="SKIP \
+         sha256::95ecac13c3f8csha256::b04eec580794279f6178644f6d7af090bd9bcbd3fb3b6873f3c714e21fa514fb73864102f13730b5fd87e7438c23b96766ef458e41 \
+         sha256::x"
+CHKUPDATE="anitya::id=374941""#.to_string();
+
+    update_spec_inner(map2, &mut spec);
+
+    assert_eq!(
+        spec,
+r#"VER=3.113
+SRCS="git::commit=tags/v$VER::https://github.com/lxgw/kose-font \
+      file::rename=XiaolaiMonoSC-Regular.ttf::https://github.com/lxgw/kose-font/releases/download/v$VER/XiaolaiMonoSC-Regular.ttf \
+      file::rename=XiaolaiSC-Regular.ttf::https://github.com/lxgw/kose-font/releases/download/v$VER/XiaolaiSC-Regular.ttf"
+CHKSUMS="SKIP \
+         sha256::95ecac13c3f8c69e3e80fa73864102f13730b5fd87e7438c23b96766ef458e41 \
+         sha256::b04eec580794279f6178644f6d7af090bd9bcbd3fb3b6873f3c714e21fa514fb"
+CHKUPDATE="anitya::id=374941""#.to_string()
     );
 }
+
