@@ -163,42 +163,15 @@ pub async fn update_from_str<C>(
     s: &str,
     cb: C,
     threads: usize,
-) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>)>
+) -> Result<HashMap<String, Vec<String>>>
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
     let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent(UA).referer(false).build()?;
 
-    let mut old = vec![];
-    for (k, v) in &context {
-        if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
-            if let Some((_, arch)) = k.split_once("__") {
-                let key = format!("SRCS__{arch}");
-                if let Some(srcs) = context.get(&key) {
-                    if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
-                        bail!("{key} and {k} element counts do not match.");
-                    }
-                }
-            } else {
-                if let Some(srcs) = context.get("SRCS") {
-                    if v.split_ascii_whitespace().count() != srcs.split_ascii_whitespace().count() {
-                        bail!("SRCS and {k} element counts do not match.");
-                    }
-                }
-            }
-
-            let v = v
-                .split_whitespace()
-                .map(|x| x.trim().to_string())
-                .collect::<Vec<_>>();
-
-            old.push(v);
-        }
-    }
-
     update_all_checksum(&client, &mut context, cb, threads).await?;
-    let mut new = vec![];
+    let mut new = HashMap::new();
 
     for (k, v) in context {
         if k == "CHKSUMS" || k.starts_with("CHKSUMS__") {
@@ -207,33 +180,35 @@ where
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>();
 
-            new.push(v);
+            new.insert(k, v);
         }
     }
 
-    Ok((old, new))
+    Ok(new)
 }
 
 pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> Result<()>
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
-    let (old, new) = update_from_str(&*spec_inner, cb, threads).await?;
+    let new = update_from_str(&*spec_inner, cb, threads).await?;
 
-    debug!("{old:?}");
     debug!("{new:?}");
 
-    let tmp_ref = spec_inner.clone();
-    let mut tmp_ref = tmp_ref.as_str();
-    let mut offset = 0;
+    for (k, v) in new {
+        let start = spec_inner.find(&k).unwrap();
+        let mut tmp_ref = spec_inner.as_str();
+        tmp_ref = &tmp_ref[start..];
+        let start_delimit = tmp_ref.find("\"").unwrap();
+        tmp_ref = &tmp_ref[start_delimit + 1..];
+        let end_delimit = tmp_ref.find("\"").unwrap();
 
-    for (i, c) in old.iter().enumerate() {
-        for (j, d) in c.iter().enumerate() {
-            let start = tmp_ref.find(d).unwrap();
-            tmp_ref = &tmp_ref[start + d.len()..];
-            spec_inner.replace_range(offset + start..offset + start + d.len(), &new[i][j]);
-            offset += start + d.len();
-        }
+        debug!("replace range: {}", &spec_inner[start..start + start_delimit + end_delimit + 2]);
+
+        spec_inner.replace_range(
+            start..start + start_delimit + end_delimit + 2,
+            &format!("{k}=\"{}\"", &v.join(" \\\n         ")),
+        );
     }
 
     Ok(())
