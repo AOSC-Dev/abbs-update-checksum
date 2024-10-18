@@ -10,6 +10,7 @@ use reqwest::Client;
 use reqwest::ClientBuilder;
 use sha2::Digest;
 use sha2::Sha256;
+use core::str;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
@@ -85,6 +86,11 @@ where
 
             let typ = split.first().unwrap_or(&"tbl");
             let src = split.last().unwrap_or(&"");
+            if typ.trim().to_lowercase().eq("pypi") {
+                let ver = split[1].split("=").last().unwrap();
+                let u = get_pypi_download_url(client, &src, ver).await?;
+                // TODO: i'm too dumb to use rust
+            }
 
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
                 res.push(Cow::Borrowed("SKIP"));
@@ -121,6 +127,26 @@ where
     }
 
     Ok(())
+}
+
+async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<String> {
+    let url = format!("https://pypi.org/pypi/{}/{}/json", pkg, ver);
+    let resp = client.get(url).send().await?;
+    let resp = resp.error_for_status()?;
+    let resp_body = resp.bytes().await?;
+    let resp_json = json::parse(&str::from_utf8(&resp_body)?)?;
+
+    let mut file_url = "";
+    if let json::JsonValue::Array(arr) = &resp_json["urls"] {
+        for item in arr {
+            if item["packagetype"].as_str().unwrap().eq("sdist") {
+                file_url = item["url"].as_str().unwrap();
+                break;
+            }
+        }
+    }
+
+    Ok(file_url.to_string())
 }
 
 async fn get_sha256(
