@@ -1,5 +1,4 @@
 use abbs_meta_apml::ParseError;
-use core::str;
 use eyre::ContextCompat;
 use eyre::Result;
 use faster_hex::hex_string;
@@ -10,7 +9,6 @@ use reqwest::header::HeaderValue;
 use reqwest::header::CONTENT_LENGTH;
 use reqwest::Client;
 use reqwest::ClientBuilder;
-use serde::Deserialize;
 use sha2::Digest;
 use sha2::Sha256;
 use std::borrow::Cow;
@@ -21,17 +19,6 @@ use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 const UA: &str = "curl/8.10.0";
-
-#[derive(Debug, Deserialize)]
-struct PyPi {
-    urls: Vec<PypiUri>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PypiUri {
-    packagetype: Box<str>,
-    url: Box<str>,
-}
 
 #[derive(Debug)]
 pub struct ParseErrors(Vec<ParseError>);
@@ -98,12 +85,16 @@ where
             let split = c.trim().split("::").collect::<Vec<_>>();
 
             let typ = split.first().unwrap_or(&"tbl");
-            let mut src: Box<str> = Box::from(*split.last().unwrap_or(&""));
+            let mut src: Cow<str> = Cow::Borrowed(*split.last().unwrap_or(&""));
 
             if typ.trim().to_lowercase() == "pypi" {
-                let ver = split[1].split("=").last().unwrap();
-                let u = get_pypi_download_url(client, &src, ver).await?;
-                src = u;
+                let ver = split
+                    .iter()
+                    .find_map(|x| x.strip_prefix("version="))
+                    .context("pypi stmt is illegal")?;
+
+                let url = get_pypi_download_url(&src, ver).context("pkg name is empty")?;
+                src = Cow::Owned(url);
             }
 
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
@@ -143,27 +134,20 @@ where
     Ok(())
 }
 
-async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<Box<str>> {
-    let url = format!("https://pypi.org/pypi/{}/{}/json", pkg, ver);
-    let resp = client.get(url).send().await?;
-    let resp = resp.error_for_status()?;
-    let json: PyPi = resp.json().await?;
+fn get_pypi_download_url(pkg: &str, ver: &str) -> Option<String> {
+    let first_char = pkg.chars().next()?;
 
-    let mut file_url = None;
+    let url = format!(
+        "https://pypi.io/packages/source/{}/{}/{}-{}.tar.gz",
+        first_char, pkg, pkg, ver
+    );
 
-    for url in json.urls {
-        if &*url.packagetype == "sdist" {
-            file_url = Some(url.url);
-            break;
-        }
-    }
-
-    Ok(file_url.context("Failed to get pypi src url")?)
+    Some(url)
 }
 
 async fn get_sha256(
     client: &Client,
-    src: Box<str>,
+    src: Cow<'_, str>,
     task_index: usize,
     cb: impl (Fn(bool, usize, usize, u64)),
     index: usize,
