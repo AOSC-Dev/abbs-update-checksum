@@ -1,6 +1,5 @@
 use abbs_meta_apml::ParseError;
 use core::str;
-use std::sync::Arc;
 use eyre::ContextCompat;
 use eyre::Result;
 use faster_hex::hex_string;
@@ -30,8 +29,8 @@ struct PyPi {
 
 #[derive(Debug, Deserialize)]
 struct PypiUri {
-    packagetype: String,
-    url: String,
+    packagetype: Box<str>,
+    url: Box<str>,
 }
 
 #[derive(Debug)]
@@ -99,15 +98,13 @@ where
             let split = c.trim().split("::").collect::<Vec<_>>();
 
             let typ = split.first().unwrap_or(&"tbl");
-            let mut src = split.last().unwrap_or(&"").to_string();
+            let mut src: Box<str> = Box::from(*split.last().unwrap_or(&""));
 
             if typ.trim().to_lowercase() == "pypi" {
                 let ver = split[1].split("=").last().unwrap();
                 let u = get_pypi_download_url(client, &src, ver).await?;
                 src = u;
             }
-
-            let src = Arc::new(src);
 
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
                 res.push(Cow::Borrowed("SKIP"));
@@ -146,7 +143,7 @@ where
     Ok(())
 }
 
-async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<String> {
+async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<Box<str>> {
     let url = format!("https://pypi.org/pypi/{}/{}/json", pkg, ver);
     let resp = client.get(url).send().await?;
     let resp = resp.error_for_status()?;
@@ -155,7 +152,7 @@ async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<
     let mut file_url = None;
 
     for url in json.urls {
-        if url.packagetype == "sdist" {
+        if &*url.packagetype == "sdist" {
             file_url = Some(url.url);
             break;
         }
@@ -166,7 +163,7 @@ async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<
 
 async fn get_sha256(
     client: &Client,
-    src: Arc<String>,
+    src: Box<str>,
     task_index: usize,
     cb: impl (Fn(bool, usize, usize, u64)),
     index: usize,
