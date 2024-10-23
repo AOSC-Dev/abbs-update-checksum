@@ -1,14 +1,14 @@
 [package]
 name = "abbs-update-checksum"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.17", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 abbs-update-checksum-core = { path = "./abbs-update-checksum-core" }
 eyre = "0.6.12"
 walkdir = "2.5.0"
-tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread"] }
 env_logger = "0.11.5"
 indicatif = "0.17.8"
 dashmap = "6.1.0"
