@@ -1,4 +1,5 @@
 use abbs_meta_apml::ParseError;
+use eyre::ContextCompat;
 use eyre::Result;
 use faster_hex::hex_string;
 use futures::StreamExt;
@@ -84,7 +85,17 @@ where
             let split = c.trim().split("::").collect::<Vec<_>>();
 
             let typ = split.first().unwrap_or(&"tbl");
-            let src = split.last().unwrap_or(&"");
+            let mut src: Cow<str> = Cow::Borrowed(*split.last().unwrap_or(&""));
+
+            if typ.trim().to_lowercase() == "pypi" {
+                let ver = split
+                    .iter()
+                    .find_map(|x| x.strip_prefix("version="))
+                    .context("pypi stmt is illegal")?;
+
+                let url = get_pypi_download_url(&src, ver).context("pkg name is empty")?;
+                src = Cow::Owned(url);
+            }
 
             if VCS.contains(&typ.trim().to_lowercase().as_str()) {
                 res.push(Cow::Borrowed("SKIP"));
@@ -123,15 +134,26 @@ where
     Ok(())
 }
 
+fn get_pypi_download_url(pkg: &str, ver: &str) -> Option<String> {
+    let first_char = pkg.chars().next()?;
+
+    let url = format!(
+        "https://pypi.io/packages/source/{}/{}/{}-{}.tar.gz",
+        first_char, pkg, pkg, ver
+    );
+
+    Some(url)
+}
+
 async fn get_sha256(
     client: &Client,
-    src: &str,
+    src: Cow<'_, str>,
     task_index: usize,
     cb: impl (Fn(bool, usize, usize, u64)),
     index: usize,
 ) -> Result<(String, usize)> {
     let mut sha256 = Sha256::new();
-    let resp = client.get(src).send().await?;
+    let resp = client.get(&*src).send().await?;
     let mut resp = resp.error_for_status()?;
 
     let total_size = resp
@@ -299,4 +321,3 @@ CHKSUMS="SKIP \
 CHKUPDATE="anitya::id=374941""#.to_string()
     );
 }
-
