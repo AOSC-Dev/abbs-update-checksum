@@ -8,7 +8,7 @@ use std::{
 use abbs_update_checksum_core::get_new_spec;
 use clap::Parser;
 use dashmap::DashMap;
-use eyre::{bail, OptionExt, Result};
+use eyre::{bail, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
 
@@ -20,17 +20,17 @@ struct Args {
     tree: String,
     #[clap(long, default_value_t = 4)]
     threads: usize,
-    package: String,
+    packages: Vec<String>,
 }
 
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
-    let pkg = args.package;
+    let pkgs = args.packages;
     let tree = get_tree(Path::new(&args.tree))?;
 
-    let mut spec = None;
+    let mut specs = vec![];
 
     for i in WalkDir::new(tree).max_depth(2).min_depth(2) {
         let i = i?;
@@ -40,55 +40,68 @@ fn main() -> Result<()> {
 
         let path = i.path();
 
-        if !path.file_name().map(|x| x == &*pkg).unwrap_or(false) {
+        if !path
+            .file_name()
+            .is_some_and(|pkg| pkgs.contains(&pkg.to_string_lossy().to_string()))
+        {
             continue;
         }
 
-        spec = Some(path.join("spec"));
-        break;
+        specs.push(path.join("spec"));
+
+        if pkgs.len() == specs.len() {
+            break;
+        }
     }
 
-    let spec = spec.ok_or_eyre("Failed to get spec")?;
+    let mut changed = false;
 
-    let mut spec_file = fs::read_to_string(&spec)?;
+    for spec in specs {
+        let mut spec_file = fs::read_to_string(&spec)?;
 
-    let mb = MultiProgress::new();
-    let map: DashMap<usize, ProgressBar> = DashMap::new();
+        let mb = MultiProgress::new();
+        let map: DashMap<usize, ProgressBar> = DashMap::new();
 
-    let changed = tokio::runtime::Builder::new_multi_thread()
-        .enable_io()
-        .enable_time()
-        .build()?
-        .block_on(get_new_spec(
-            &mut spec_file,
-            |status, index, inc, total| match map.get(&index) {
-                Some(pb) => {
-                    if !status {
-                        pb.inc(inc as u64);
-                    } else {
-                        pb.finish_and_clear();
+        let is_changed = tokio::runtime::Builder::new_multi_thread()
+            .enable_io()
+            .enable_time()
+            .build()?
+            .block_on(get_new_spec(
+                &mut spec_file,
+                |status, index, inc, total| match map.get(&index) {
+                    Some(pb) => {
+                        if !status {
+                            pb.inc(inc as u64);
+                        } else {
+                            pb.finish_and_clear();
+                        }
                     }
-                }
-                None => {
-                    let pb = mb.add(ProgressBar::new(total));
-                    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                        .unwrap()
-                        .progress_chars("#>-"));
-                    pb.inc(inc as u64);
-                    map.insert(index, pb);
-                }
-            },
-            args.threads,
-        ))?;
+                    None => {
+                        let pb = mb.add(ProgressBar::new(total));
+                        pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                            .unwrap()
+                            .progress_chars("#>-"));
+                        pb.inc(inc as u64);
+                        map.insert(index, pb);
+                    }
+                },
+                args.threads,
+            ))?;
 
-    if args.dry_run {
-        println!("{}", spec_file);
-        if changed {
-            exit(1);
+        if !changed {
+            changed = is_changed;
         }
-    } else {
-        let mut f = fs::File::create(&spec)?;
-        f.write_all(spec_file.as_bytes())?;
+
+        if args.dry_run {
+            println!("{}", spec_file);
+        } else {
+            let mut f = fs::File::create(&spec)?;
+            f.write_all(spec_file.as_bytes())?;
+        }
+    }
+
+    if changed && args.dry_run {
+        exit(1)
     }
 
     Ok(())
