@@ -136,7 +136,7 @@ where
             old_checksum
                 .trim()
                 .split_ascii_whitespace()
-                .map(|x| Cow::Borrowed(x))
+                .map(Cow::Borrowed)
                 .collect::<HashSet<_>>()
                 != checksum.into_iter().collect::<HashSet<_>>()
         }) {
