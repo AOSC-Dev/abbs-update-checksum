@@ -16,7 +16,7 @@ dependencies = [
 
 [[package]]
 name = "abbs-update-checksum"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "abbs-update-checksum-core",
  "clap",
