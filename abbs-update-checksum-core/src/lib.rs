@@ -63,10 +63,11 @@ async fn update_all_checksum<C>(
     context: &mut HashMap<String, String>,
     cb: C,
     threads: usize,
-) -> Result<()>
+) -> Result<bool>
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
+    let mut is_changed = false;
     let mut src_chksum_map = HashMap::new();
 
     let mut task_index = 0;
@@ -84,10 +85,10 @@ where
         for (i, c) in split.iter().enumerate() {
             let split = c.trim().split("::").collect::<Vec<_>>();
 
-            let typ = split.first().unwrap_or(&"tbl");
+            let src_type = split.first().unwrap_or(&"tbl");
             let mut src: Cow<str> = Cow::Borrowed(*split.last().unwrap_or(&""));
 
-            if typ.trim().to_lowercase() == "pypi" {
+            if src_type.trim().to_lowercase() == "pypi" {
                 let ver = split
                     .iter()
                     .find_map(|x| x.strip_prefix("version="))
@@ -97,7 +98,7 @@ where
                 src = Cow::Owned(url);
             }
 
-            if VCS.contains(&typ.trim().to_lowercase().as_str()) {
+            if VCS.contains(&src_type.trim().to_lowercase().as_str()) {
                 res.push(Cow::Borrowed("SKIP"));
             } else {
                 res.push(Cow::Borrowed(""));
@@ -120,18 +121,27 @@ where
         src_chksum_map.insert(k, res);
     }
 
-    for (k, v) in src_chksum_map {
-        let type_arch = k.split_once("__");
+    for (src_type, checksum) in src_chksum_map {
+        let type_arch = src_type.split_once("__");
+        let new = checksum.join(" ");
 
-        if let Some((_, arch)) = type_arch {
-            let key = format!("CHKSUMS__{}", arch);
-            context.insert(key.to_string(), v.join(" "));
+        let src_type = if let Some((_, arch)) = type_arch {
+            format!("CHKSUMS__{}", arch)
         } else {
-            context.insert("CHKSUMS".to_string(), v.join(" "));
+            "CHKSUMS".to_string()
+        };
+
+        if context
+            .get(&src_type)
+            .is_none_or(|old_checksum| *old_checksum != new)
+        {
+            is_changed = true;
         }
+
+        context.insert(src_type, new);
     }
 
-    Ok(())
+    Ok(is_changed)
 }
 
 fn get_pypi_download_url(pkg: &str, ver: &str) -> Option<String> {
@@ -180,18 +190,21 @@ async fn get_sha256(
     Ok((s, index))
 }
 
-pub async fn update_from_str<C>(
-    s: &str,
-    cb: C,
-    threads: usize,
-) -> Result<HashMap<String, Vec<String>>>
+#[derive(Debug)]
+pub struct UpdateChecksumResult {
+    pub changed: bool,
+    pub result: HashMap<String, Vec<String>>,
+}
+
+pub async fn update_from_str<C>(s: &str, cb: C, threads: usize) -> Result<UpdateChecksumResult>
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
     let mut context = parse_from_str(s, false)?;
     let client = ClientBuilder::new().user_agent(UA).referer(false).build()?;
 
-    update_all_checksum(&client, &mut context, cb, threads).await?;
+    let is_changed = update_all_checksum(&client, &mut context, cb, threads).await?;
+
     let mut new = HashMap::new();
 
     for (k, v) in context {
@@ -205,20 +218,23 @@ where
         }
     }
 
-    Ok(new)
+    Ok(UpdateChecksumResult {
+        changed: is_changed,
+        result: new,
+    })
 }
 
-pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> Result<()>
+pub async fn get_new_spec<C>(spec_inner: &mut String, cb: C, threads: usize) -> Result<bool>
 where
     C: Fn(bool, usize, usize, u64) + Copy,
 {
-    let new_checksum_map = update_from_str(&*spec_inner, cb, threads).await?;
+    let update_chksum_res = update_from_str(&*spec_inner, cb, threads).await?;
 
-    debug!("{new_checksum_map:?}");
+    debug!("{update_chksum_res:?}");
 
-    update_spec_inner(new_checksum_map, spec_inner);
+    update_spec_inner(update_chksum_res.result, spec_inner);
 
-    Ok(())
+    Ok(update_chksum_res.changed)
 }
 
 fn update_spec_inner(new: HashMap<String, Vec<String>>, spec_inner: &mut String) {
