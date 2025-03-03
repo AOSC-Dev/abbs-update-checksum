@@ -13,6 +13,7 @@ use sha2::Digest;
 use sha2::Sha256;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Display;
 use tokio::task::spawn_blocking;
@@ -131,10 +132,14 @@ where
             "CHKSUMS".to_string()
         };
 
-        if context
-            .get(&src_type)
-            .is_none_or(|old_checksum| *old_checksum != new)
-        {
+        if context.get(&src_type).is_none_or(|old_checksum| {
+            old_checksum
+                .trim()
+                .split_ascii_whitespace()
+                .map(|x| Cow::Borrowed(x))
+                .collect::<HashSet<_>>()
+                != checksum.into_iter().collect::<HashSet<_>>()
+        }) {
             is_changed = true;
         }
 

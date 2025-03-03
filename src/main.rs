@@ -10,6 +10,8 @@ use clap::Parser;
 use dashmap::DashMap;
 use eyre::{bail, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use log::{info, LevelFilter};
+use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
@@ -24,7 +26,13 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    TermLogger::init(
+        LevelFilter::Info,
+        ConfigBuilder::default().build(),
+        TerminalMode::Stderr,
+        ColorChoice::Auto,
+    )?;
+
     let args = Args::parse();
 
     let pkgs = args.packages;
@@ -87,6 +95,8 @@ fn main() -> Result<()> {
                 },
                 args.threads,
             ))?;
+
+        info!("{} is changed: {}", spec.display(), is_changed);
 
         if !changed {
             changed = is_changed;
