@@ -8,9 +8,9 @@ use std::{
 use abbs_update_checksum_core::get_new_spec;
 use clap::Parser;
 use dashmap::DashMap;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{info, LevelFilter};
+use log::{LevelFilter, info};
 use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 use walkdir::WalkDir;
 
