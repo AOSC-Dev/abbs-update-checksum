@@ -2,6 +2,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    process::exit,
 };
 
 use abbs_update_checksum_core::get_new_spec;
@@ -49,17 +50,17 @@ fn main() -> Result<()> {
 
     let spec = spec.ok_or_eyre("Failed to get spec")?;
 
-    let mut spec_inner = fs::read_to_string(&spec)?;
+    let mut spec_file = fs::read_to_string(&spec)?;
 
     let mb = MultiProgress::new();
     let map: DashMap<usize, ProgressBar> = DashMap::new();
 
-    tokio::runtime::Builder::new_multi_thread()
+    let changed = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()?
         .block_on(get_new_spec(
-            &mut spec_inner,
+            &mut spec_file,
             |status, index, inc, total| match map.get(&index) {
                 Some(pb) => {
                     if !status {
@@ -81,10 +82,13 @@ fn main() -> Result<()> {
         ))?;
 
     if args.dry_run {
-        println!("{}", spec_inner);
+        println!("{}", spec_file);
+        if changed {
+            exit(1);
+        }
     } else {
         let mut f = fs::File::create(&spec)?;
-        f.write_all(spec_inner.as_bytes())?;
+        f.write_all(spec_file.as_bytes())?;
     }
 
     Ok(())
