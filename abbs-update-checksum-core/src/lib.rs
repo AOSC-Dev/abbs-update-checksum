@@ -1,5 +1,4 @@
 use abbs_meta_apml::ParseError;
-use core::str;
 use eyre::ContextCompat;
 use eyre::Result;
 use faster_hex::hex_string;
@@ -60,7 +59,7 @@ fn parse_from_str(
             return Err(ParseErrors(e));
         } else {
             warn!("{e:?}, buildit will use fallback method to parse file");
-            for line in s.split('\n') {
+            for line in s.lines() {
                 let stmt = line.split_once('=');
                 if let Some((name, value)) = stmt {
                     context.insert(name.to_string(), value.replace('"', ""));
@@ -109,7 +108,7 @@ where
                     .context("pypi stmt is illegal")?;
 
                 let url = get_pypi_download_url(client, &src, ver).await?;
-                src = Cow::Owned(url.to_string());
+                src = Cow::Owned(url);
             }
 
             if VCS.contains(&src_type.trim().to_lowercase().as_str()) {
@@ -168,15 +167,11 @@ async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<
     let resp = resp.error_for_status()?;
     let json: PyPi = resp.json().await?;
 
-    let mut file_url = None;
-
-    for url in json.urls {
-        if &*url.packagetype == "sdist" {
-            file_url = Some(url.url);
-            break;
-        }
-    }
-    Ok(file_url.context("Failed to get pypi src url")?)
+    json.urls
+        .into_iter()
+        .find(|pypi| pypi.packagetype == "sdist")
+        .map(|pypi| pypi.url)
+        .context("Failed to get pypi src url")
 }
 
 async fn get_sha256(
