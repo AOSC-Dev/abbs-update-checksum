@@ -9,6 +9,7 @@ use reqwest::header::HeaderValue;
 use reqwest::header::CONTENT_LENGTH;
 use reqwest::Client;
 use reqwest::ClientBuilder;
+use serde::Deserialize;
 use sha2::Digest;
 use sha2::Sha256;
 use std::borrow::Cow;
@@ -20,6 +21,17 @@ use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 const UA: &str = "curl/8.10.0";
+
+#[derive(Debug, Deserialize)]
+struct PyPi {
+    urls: Vec<PypiUri>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PypiUri {
+    packagetype: String,
+    url: String,
+}
 
 #[derive(Debug)]
 pub struct ParseErrors(Vec<ParseError>);
@@ -47,7 +59,7 @@ fn parse_from_str(
             return Err(ParseErrors(e));
         } else {
             warn!("{e:?}, buildit will use fallback method to parse file");
-            for line in s.split('\n') {
+            for line in s.lines() {
                 let stmt = line.split_once('=');
                 if let Some((name, value)) = stmt {
                     context.insert(name.to_string(), value.replace('"', ""));
@@ -95,7 +107,7 @@ where
                     .find_map(|x| x.strip_prefix("version="))
                     .context("pypi stmt is illegal")?;
 
-                let url = get_pypi_download_url(&src, ver).context("pkg name is empty")?;
+                let url = get_pypi_download_url(client, &src, ver).await?;
                 src = Cow::Owned(url);
             }
 
@@ -149,15 +161,17 @@ where
     Ok(is_changed)
 }
 
-fn get_pypi_download_url(pkg: &str, ver: &str) -> Option<String> {
-    let first_char = pkg.chars().next()?;
+async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<String> {
+    let url = format!("https://pypi.org/pypi/{}/{}/json", pkg, ver);
+    let resp = client.get(url).send().await?;
+    let resp = resp.error_for_status()?;
+    let json: PyPi = resp.json().await?;
 
-    let url = format!(
-        "https://pypi.io/packages/source/{}/{}/{}-{}.tar.gz",
-        first_char, pkg, pkg, ver
-    );
-
-    Some(url)
+    json.urls
+        .into_iter()
+        .find(|pypi| pypi.packagetype == "sdist")
+        .map(|pypi| pypi.url)
+        .context("Failed to get pypi src url")
 }
 
 async fn get_sha256(
