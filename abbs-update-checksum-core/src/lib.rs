@@ -1,4 +1,5 @@
 use abbs_meta_apml::ParseError;
+use core::str;
 use eyre::ContextCompat;
 use eyre::Result;
 use faster_hex::hex_string;
@@ -9,6 +10,7 @@ use reqwest::header::HeaderValue;
 use reqwest::header::CONTENT_LENGTH;
 use reqwest::Client;
 use reqwest::ClientBuilder;
+use serde::Deserialize;
 use sha2::Digest;
 use sha2::Sha256;
 use std::borrow::Cow;
@@ -20,6 +22,17 @@ use tokio::task::spawn_blocking;
 
 const VCS: &[&str] = &["git", "bzr", "svn", "hg", "bk"];
 const UA: &str = "curl/8.10.0";
+
+#[derive(Debug, Deserialize)]
+struct PyPi {
+    urls: Vec<PypiUri>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PypiUri {
+    packagetype: String,
+    url: String,
+}
 
 #[derive(Debug)]
 pub struct ParseErrors(Vec<ParseError>);
@@ -95,8 +108,8 @@ where
                     .find_map(|x| x.strip_prefix("version="))
                     .context("pypi stmt is illegal")?;
 
-                let url = get_pypi_download_url(&src, ver).context("pkg name is empty")?;
-                src = Cow::Owned(url);
+                let url = get_pypi_download_url(client, &src, ver).await?;
+                src = Cow::Owned(url.to_string());
             }
 
             if VCS.contains(&src_type.trim().to_lowercase().as_str()) {
@@ -149,15 +162,21 @@ where
     Ok(is_changed)
 }
 
-fn get_pypi_download_url(pkg: &str, ver: &str) -> Option<String> {
-    let first_char = pkg.chars().next()?;
+async fn get_pypi_download_url(client: &Client, pkg: &str, ver: &str) -> Result<String> {
+    let url = format!("https://pypi.org/pypi/{}/{}/json", pkg, ver);
+    let resp = client.get(url).send().await?;
+    let resp = resp.error_for_status()?;
+    let json: PyPi = resp.json().await?;
 
-    let url = format!(
-        "https://pypi.io/packages/source/{}/{}/{}-{}.tar.gz",
-        first_char, pkg, pkg, ver
-    );
+    let mut file_url = None;
 
-    Some(url)
+    for url in json.urls {
+        if &*url.packagetype == "sdist" {
+            file_url = Some(url.url);
+            break;
+        }
+    }
+    Ok(file_url.context("Failed to get pypi src url")?)
 }
 
 async fn get_sha256(

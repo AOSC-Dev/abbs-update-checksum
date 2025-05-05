@@ -39,6 +39,7 @@ dependencies = [
  "futures",
  "log",
  "reqwest",
+ "serde",
  "sha2",
  "tokio",
 ]
