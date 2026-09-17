@@ -178,7 +178,7 @@ async fn get_sha256(
     client: &Client,
     src: Cow<'_, str>,
     task_index: usize,
-    cb: impl (Fn(bool, usize, usize, u64)),
+    cb: impl Fn(bool, usize, usize, u64),
     index: usize,
 ) -> Result<(String, usize)> {
     let mut sha256 = Sha256::new();
